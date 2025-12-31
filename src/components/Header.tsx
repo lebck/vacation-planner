@@ -6,22 +6,45 @@ import {
   Download,
   Upload,
   Loader2,
-  Save
+  Save,
+  CalendarPlus
 } from 'lucide-react';
 import { useVacation } from '../VacationContext';
 import type { VacationData } from '../types';
 import { BUNDESLAENDER } from '../constants';
+import { buildVacationIcs } from '../utils';
 
 export const Header: React.FC = () => {
-  const { federalState: state, setFederalState: setState, year, setYear, isSaving, vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, setVacationDays, setBlockedDays, setVacationNotes, setBlockedNotes, setTotalEntitlement } = useVacation();
+  const { federalState: state, setFederalState: setState, year, setYear, isSaving, vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, setVacationDays, setBlockedDays, setVacationNotes, setBlockedNotes, setTotalEntitlement, groupDates } = useVacation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerDownload = (payload: BlobPart, filename: string, mime: string): void => {
+    const blob = new Blob([payload], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleExport = (): void => {
     const data: VacationData = { federalState: state, year, totalEntitlement, vacationDays, blockedDays, vacationNotes, blockedNotes };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url; link.download = `urlaubsplanung_${year}.json`; link.click(); URL.revokeObjectURL(url);
+    triggerDownload(JSON.stringify(data, null, 2), `urlaubsplanung_${year}.json`, 'application/json');
+  };
+
+  const handleCalendarExport = (): void => {
+    if (!vacationDays.length) {
+      alert('Keine Urlaubstage vorhanden, die exportiert werden könnten.');
+      return;
+    }
+    const grouped = groupDates(vacationDays);
+    if (!grouped.length) {
+      alert('Es konnten keine Urlaubsblöcke gebildet werden.');
+      return;
+    }
+    const ics = buildVacationIcs(grouped, vacationNotes, { year, federalState: state });
+    triggerDownload(ics, `urlaub_${year}.ics`, 'text/calendar;charset=utf-8');
   };
 
   const handleImport = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -66,6 +89,9 @@ export const Header: React.FC = () => {
         <div className="flex bg-slate-100 rounded-xl p-1 mr-2">
           <button onClick={handleExport} className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600" title="Exportieren">
             <Download size={18} />
+          </button>
+          <button onClick={handleCalendarExport} className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600" title="Kalenderdatei exportieren">
+            <CalendarPlus size={18} />
           </button>
           <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600" title="Importieren">
             <Upload size={18} />

@@ -1,4 +1,26 @@
-import type { HolidayMap } from './types';
+import { FERIEN_DATA } from './constants';
+import type { FerienData, HolidayMap } from './types';
+
+const OPEN_HOLIDAYS_BASE_URL = 'https://openholidaysapi.org';
+const OPEN_HOLIDAYS_COUNTRY_ISO = 'DE';
+const OPEN_HOLIDAYS_LANGUAGE_ISO = 'DE';
+
+interface OpenHolidaysName {
+  language: string;
+  text: string;
+}
+
+interface OpenHolidaysSchoolHoliday {
+  id: string;
+  startDate: string;
+  endDate: string;
+  type: string;
+  name: OpenHolidaysName[];
+  regionalScope?: string;
+  temporalScope?: string;
+  nationwide?: boolean;
+  subdivisions?: Array<{ code: string; shortName?: string; }>;
+}
 
 export const formatDateLocal = (date: Date): string => {
   const year = date.getFullYear();
@@ -12,6 +34,68 @@ export const parseDateLocal = (dateStr: string): Date => {
 };
 
 export const isHalfHoliday = (dateStr: string): boolean => dateStr.endsWith('-12-24') || dateStr.endsWith('-12-31');
+
+const addPeriodToHolidayMap = (startStr: string, endStr: string, year: number, label: string, target: HolidayMap): void => {
+  let cursor = parseDateLocal(startStr);
+  const periodEnd = parseDateLocal(endStr);
+  while (cursor <= periodEnd) {
+    if (cursor.getFullYear() === year) target[formatDateLocal(cursor)] = label;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+};
+
+const toSubdivisionCode = (state: string): string => `${OPEN_HOLIDAYS_COUNTRY_ISO}-${state.toUpperCase()}`;
+
+export const buildSchoolHolidayMapFromStaticData = (
+  year: number,
+  federalState: string,
+  data: FerienData = FERIEN_DATA
+): HolidayMap => {
+  const map: HolidayMap = {};
+  const stateData = data[federalState];
+  if (!stateData) return map;
+  Object.values(stateData).forEach(periods => {
+    (periods || []).forEach(period => {
+      addPeriodToHolidayMap(period.start, period.end, year, period.name, map);
+    });
+  });
+  return map;
+};
+
+const buildSchoolHolidayMapFromApiPayload = (payload: OpenHolidaysSchoolHoliday[], year: number): HolidayMap => {
+  const map: HolidayMap = {};
+  payload.forEach(item => {
+    const localizedName = item.name.find(entry => entry.language === OPEN_HOLIDAYS_LANGUAGE_ISO)?.text
+      ?? item.name[0]?.text
+      ?? 'Schulferien';
+    addPeriodToHolidayMap(item.startDate, item.endDate, year, localizedName, map);
+  });
+  return map;
+};
+
+export const fetchSchoolHolidayMap = async (
+  year: number,
+  federalState: string,
+  signal?: AbortSignal
+): Promise<HolidayMap> => {
+  const params = new URLSearchParams({
+    countryIsoCode: OPEN_HOLIDAYS_COUNTRY_ISO,
+    subdivisionCode: toSubdivisionCode(federalState),
+    languageIsoCode: OPEN_HOLIDAYS_LANGUAGE_ISO,
+    validFrom: `${year}-01-01`,
+    validTo: `${year}-12-31`
+  });
+
+  const response = await fetch(`${OPEN_HOLIDAYS_BASE_URL}/SchoolHolidays?${params.toString()}`, {
+    headers: { accept: 'application/json' },
+    signal
+  });
+
+  if (!response.ok) throw new Error(`OpenHolidays request failed (${response.status})`);
+
+  const payload = await response.json() as OpenHolidaysSchoolHoliday[];
+  return buildSchoolHolidayMapFromApiPayload(payload, year);
+};
 
 const getEasterDate = (year: number): Date => {
   const a = year % 19;
@@ -64,4 +148,72 @@ export const getGermanHolidays = (year: number, state: string): HolidayMap => {
   if (state === 'BE') holidays[formatDateLocal(new Date(year, 2, 8))] = "Internationaler Frauentag";
 
   return holidays;
+};
+
+const escapeIcsText = (value: string): string =>
+  value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+
+const formatDateForIcs = (dateStr: string): string => dateStr.replace(/-/g, '');
+
+const formatTimestampForIcs = (date: Date): string => {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+};
+
+const addDaysToDateStr = (dateStr: string, offset: number): string => {
+  const date = parseDateLocal(dateStr);
+  date.setDate(date.getDate() + offset);
+  return formatDateLocal(date);
+};
+
+export interface VacationIcsOptions {
+  year: number;
+  federalState: string;
+  calendarName?: string;
+}
+
+export const buildVacationIcs = (
+  groupedDates: string[][],
+  vacationNotes: Record<string, string>,
+  options: VacationIcsOptions
+): string => {
+  const { year, federalState, calendarName = `Urlaub ${year}` } = options;
+  const dtStamp = formatTimestampForIcs(new Date());
+
+  const events = groupedDates.map(dates => {
+    if (!dates.length) return '';
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    const dtStart = formatDateForIcs(start);
+    const dtEnd = formatDateForIcs(addDaysToDateStr(end, 1));
+    const uid = `${dtStart}-${dtEnd}-${federalState}@vacation-planner.local`;
+
+    const note = vacationNotes[start] ?? vacationNotes[end];
+
+    return [
+      'BEGIN:VEVENT',
+      `DTSTAMP:${dtStamp}`,
+      `UID:${uid}`,
+      `SUMMARY:${note ?? "Urlaub"}`,
+      'TRANSP:OPAQUE',
+      `DTSTART;VALUE=DATE:${dtStart}`,
+      `DTEND;VALUE=DATE:${dtEnd}`,
+      'END:VEVENT'
+    ].join('\r\n');
+  }).filter(Boolean);
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Vacation Planner//DE',
+    'CALSCALE:GREGORIAN',
+    `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
+    ...events,
+    'END:VCALENDAR'
+  ];
+
+  return `${lines.join('\r\n')}\r\n`;
 };

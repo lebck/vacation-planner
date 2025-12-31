@@ -1,7 +1,6 @@
-import React, { createContext, useContext, type ReactNode, useState, useEffect, useMemo } from 'react';
-import { FERIEN_DATA } from './constants';
+import React, { createContext, useContext, type ReactNode, useState, useEffect, useMemo, useRef } from 'react';
 import type { VacationContextType, HolidayMap } from './types';
-import { getGermanHolidays, parseDateLocal, formatDateLocal } from './utils';
+import { getGermanHolidays, parseDateLocal, formatDateLocal, buildSchoolHolidayMapFromStaticData, fetchSchoolHolidayMap } from './utils';
 import { VacationStorage } from './VacationStorage';
 
 // --- CONTEXT ---
@@ -23,6 +22,10 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
   const [selectionStart, setSelectionStart] = useState<string | null>(null);
   const [blockSelectionStart, setBlockSelectionStart] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [schoolHolidays, setSchoolHolidays] = useState<HolidayMap>(() => buildSchoolHolidayMapFromStaticData(year, federalState));
+
+  const schoolHolidayCache = useRef<Map<string, HolidayMap>>(new Map());
+  const schoolHolidayAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const data = VacationStorage.load();
@@ -54,21 +57,31 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
 
   const holidays = useMemo(() => getGermanHolidays(year, federalState), [year, federalState]);
 
-  const schoolHolidays = useMemo(() => {
-    const map: HolidayMap = {};
-    const allYearsForState = FERIEN_DATA[federalState] || {};
-    Object.keys(allYearsForState).forEach(dataYearStr => {
-      const dataYear = Number(dataYearStr);
-      (allYearsForState[dataYear] || []).forEach(period => {
-        let curr = parseDateLocal(period.start);
-        const end = parseDateLocal(period.end);
-        while (curr <= end) {
-          if (curr.getFullYear() === year) map[formatDateLocal(curr)] = period.name;
-          curr.setDate(curr.getDate() + 1);
-        }
+  useEffect(() => {
+    const cacheKey = `${federalState}-${year}`;
+
+    schoolHolidayAbort.current?.abort();
+    const controller = new AbortController();
+    schoolHolidayAbort.current = controller;
+
+    if (schoolHolidayCache.current.has(cacheKey)) {
+      setSchoolHolidays(schoolHolidayCache.current.get(cacheKey)!);
+      return () => controller.abort();
+    }
+
+    setSchoolHolidays(buildSchoolHolidayMapFromStaticData(year, federalState));
+
+    fetchSchoolHolidayMap(year, federalState, controller.signal)
+      .then(map => {
+        schoolHolidayCache.current.set(cacheKey, map);
+        setSchoolHolidays(map);
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        console.error('Failed to fetch school holidays from OpenHolidays', error);
       });
-    });
-    return map;
+
+    return () => controller.abort();
   }, [year, federalState]);
 
   const bridgeDays = useMemo(() => {
