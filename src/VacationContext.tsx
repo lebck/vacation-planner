@@ -1,6 +1,6 @@
 import React, { createContext, useContext, type ReactNode, useState, useEffect, useMemo, useRef } from 'react';
 import type { VacationContextType, HolidayMap } from './types';
-import { getGermanHolidays, parseDateLocal, formatDateLocal, buildSchoolHolidayMapFromStaticData, fetchSchoolHolidayMap } from './utils';
+import { getGermanHolidays, parseDateLocal, formatDateLocal, buildSchoolHolidayMapFromStaticData, fetchSchoolHolidayMap, getPersistedSchoolHolidayMap, persistSchoolHolidayMap } from './utils';
 import { VacationStorage } from './VacationStorage';
 
 // --- CONTEXT ---
@@ -61,19 +61,29 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
     const cacheKey = `${federalState}-${year}`;
 
     schoolHolidayAbort.current?.abort();
-    const controller = new AbortController();
-    schoolHolidayAbort.current = controller;
+    schoolHolidayAbort.current = null;
 
     if (schoolHolidayCache.current.has(cacheKey)) {
       setSchoolHolidays(schoolHolidayCache.current.get(cacheKey)!);
-      return () => controller.abort();
+      return;
+    }
+
+    const persisted = getPersistedSchoolHolidayMap(cacheKey);
+    if (persisted) {
+      schoolHolidayCache.current.set(cacheKey, persisted);
+      setSchoolHolidays(persisted);
+      return;
     }
 
     setSchoolHolidays(buildSchoolHolidayMapFromStaticData(year, federalState));
 
+    const controller = new AbortController();
+    schoolHolidayAbort.current = controller;
+
     fetchSchoolHolidayMap(year, federalState, controller.signal)
       .then(map => {
         schoolHolidayCache.current.set(cacheKey, map);
+        persistSchoolHolidayMap(cacheKey, map);
         setSchoolHolidays(map);
       })
       .catch(error => {

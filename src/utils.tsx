@@ -4,6 +4,8 @@ import type { FerienData, HolidayMap } from './types';
 const OPEN_HOLIDAYS_BASE_URL = 'https://openholidaysapi.org';
 const OPEN_HOLIDAYS_COUNTRY_ISO = 'DE';
 const OPEN_HOLIDAYS_LANGUAGE_ISO = 'DE';
+const SCHOOL_HOLIDAY_STORAGE_KEY = 'vacationPlanPro.schoolHolidayCache';
+const SCHOOL_HOLIDAY_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 interface OpenHolidaysName {
   language: string;
@@ -22,6 +24,13 @@ interface OpenHolidaysSchoolHoliday {
   subdivisions?: Array<{ code: string; shortName?: string; }>;
 }
 
+interface PersistedSchoolHolidayEntry {
+  fetchedAt: number;
+  map: HolidayMap;
+}
+
+type PersistedSchoolHolidayCache = Record<string, PersistedSchoolHolidayEntry>;
+
 export const formatDateLocal = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -34,6 +43,45 @@ export const parseDateLocal = (dateStr: string): Date => {
 };
 
 export const isHalfHoliday = (dateStr: string): boolean => dateStr.endsWith('-12-24') || dateStr.endsWith('-12-31');
+
+const readPersistedSchoolHolidayCache = (): PersistedSchoolHolidayCache => {
+  try {
+    const raw = localStorage.getItem(SCHOOL_HOLIDAY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) as PersistedSchoolHolidayCache : {};
+  } catch (error) {
+    console.error('Failed to read school holiday cache', error);
+    return {};
+  }
+};
+
+const writePersistedSchoolHolidayCache = (cache: PersistedSchoolHolidayCache): void => {
+  try {
+    localStorage.setItem(SCHOOL_HOLIDAY_STORAGE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.error('Failed to persist school holiday cache', error);
+  }
+};
+
+export const getPersistedSchoolHolidayMap = (
+  cacheKey: string,
+  ttlMs: number = SCHOOL_HOLIDAY_CACHE_TTL_MS
+): HolidayMap | null => {
+  const cache = readPersistedSchoolHolidayCache();
+  const entry = cache[cacheKey];
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > ttlMs) {
+    delete cache[cacheKey];
+    writePersistedSchoolHolidayCache(cache);
+    return null;
+  }
+  return entry.map;
+};
+
+export const persistSchoolHolidayMap = (cacheKey: string, map: HolidayMap): void => {
+  const cache = readPersistedSchoolHolidayCache();
+  cache[cacheKey] = { fetchedAt: Date.now(), map };
+  writePersistedSchoolHolidayCache(cache);
+};
 
 const addPeriodToHolidayMap = (startStr: string, endStr: string, year: number, label: string, target: HolidayMap): void => {
   let cursor = parseDateLocal(startStr);
@@ -94,6 +142,9 @@ export const fetchSchoolHolidayMap = async (
   if (!response.ok) throw new Error(`OpenHolidays request failed (${response.status})`);
 
   const payload = await response.json() as OpenHolidaysSchoolHoliday[];
+
+  if (payload.length === 0) throw new Error(`OpenHolidays request failed. empty response for ${federalState} ${year}`);
+
   return buildSchoolHolidayMapFromApiPayload(payload, year);
 };
 
