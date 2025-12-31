@@ -7,7 +7,7 @@ export interface VacationData {
   vacationNotes: Record<string, string>;
   blockedNotes: Record<string, string>;
   totalEntitlement: number;
-  state: string;
+  federalState: string;
   year: number;
   lastUpdated?: string;
 }
@@ -35,8 +35,8 @@ export interface DayNoteInfo {
 export interface VacationContextType {
   year: number;
   setYear: React.Dispatch<React.SetStateAction<number>>;
-  state: string;
-  setState: React.Dispatch<React.SetStateAction<string>>;
+  federalState: string;
+  setFederalState: React.Dispatch<React.SetStateAction<string>>;
   vacationDays: string[];
   setVacationDays: React.Dispatch<React.SetStateAction<string[]>>;
   blockedDays: string[];

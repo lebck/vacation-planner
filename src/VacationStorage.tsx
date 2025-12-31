@@ -1,6 +1,5 @@
 import type { VacationData } from './types';
 
-// --- UTILS & STATIC DATA ---
 const STORAGE_KEY = 'vacationPlanPro';
 export const VacationStorage = {
   save: (data: VacationData): void => {

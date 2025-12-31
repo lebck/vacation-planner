@@ -14,7 +14,7 @@ export const useVacation = (): VacationContextType => {
 };
 export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children }) => {
   const [year, setYear] = useState<number>(new Date().getFullYear());
-  const [state, setState] = useState<string>('HE');
+  const [federalState, setFederalState] = useState<string>('HE');
   const [vacationDays, setVacationDays] = useState<string[]>([]);
   const [blockedDays, setBlockedDays] = useState<string[]>([]);
   const [vacationNotes, setVacationNotes] = useState<Record<string, string>>({});
@@ -24,7 +24,6 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
   const [blockSelectionStart, setBlockSelectionStart] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // --- Initiales Laden (nutzt VacationStorage) ---
   useEffect(() => {
     const data = VacationStorage.load();
     if (data) {
@@ -33,18 +32,17 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
       if (data.vacationNotes) setVacationNotes(data.vacationNotes);
       if (data.blockedNotes) setBlockedNotes(data.blockedNotes);
       if (data.totalEntitlement) setTotalEntitlement(data.totalEntitlement);
-      if (data.state) setState(data.state);
+      if (data.federalState) setFederalState(data.federalState);
       if (data.year) setYear(data.year);
     }
   }, []);
 
-  // --- Persistenz-Effekt (nutzt VacationStorage mit Debounce) ---
   useEffect(() => {
     const triggerSave = () => {
       setIsSaving(true);
       VacationStorage.save({
         vacationDays, blockedDays, vacationNotes, blockedNotes,
-        totalEntitlement, state, year
+        totalEntitlement, federalState, year
       });
       const visualFeedback = setTimeout(() => setIsSaving(false), 500);
       return () => clearTimeout(visualFeedback);
@@ -52,14 +50,13 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
 
     const debounce = setTimeout(triggerSave, 800);
     return () => clearTimeout(debounce);
-  }, [vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, state, year]);
+  }, [vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, federalState, year]);
 
-  // --- Computed Data & Logik ---
-  const holidays = useMemo(() => getGermanHolidays(year, state), [year, state]);
+  const holidays = useMemo(() => getGermanHolidays(year, federalState), [year, federalState]);
 
   const schoolHolidays = useMemo(() => {
     const map: HolidayMap = {};
-    const allYearsForState = FERIEN_DATA[state] || {};
+    const allYearsForState = FERIEN_DATA[federalState] || {};
     Object.keys(allYearsForState).forEach(dataYearStr => {
       const dataYear = Number(dataYearStr);
       (allYearsForState[dataYear] || []).forEach(period => {
@@ -72,7 +69,7 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
       });
     });
     return map;
-  }, [year, state]);
+  }, [year, federalState]);
 
   const bridgeDays = useMemo(() => {
     const bridges: HolidayMap = {};
@@ -149,7 +146,7 @@ export const VacationProvider: React.FC<{ children: ReactNode; }> = ({ children 
 
   const value: VacationContextType = {
     year, setYear,
-    state, setState,
+    federalState, setFederalState,
     vacationDays, setVacationDays,
     blockedDays, setBlockedDays,
     vacationNotes, setVacationNotes,

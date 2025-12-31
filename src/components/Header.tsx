@@ -13,11 +13,11 @@ import type { VacationData } from '../types';
 import { BUNDESLAENDER } from '../constants';
 
 export const Header: React.FC = () => {
-  const { state, setState, year, setYear, isSaving, vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, setVacationDays, setBlockedDays, setVacationNotes, setBlockedNotes, setTotalEntitlement } = useVacation();
+  const { federalState: state, setFederalState: setState, year, setYear, isSaving, vacationDays, blockedDays, vacationNotes, blockedNotes, totalEntitlement, setVacationDays, setBlockedDays, setVacationNotes, setBlockedNotes, setTotalEntitlement } = useVacation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = (): void => {
-    const data: VacationData = { state, year, totalEntitlement, vacationDays, blockedDays, vacationNotes, blockedNotes };
+    const data: VacationData = { federalState: state, year, totalEntitlement, vacationDays, blockedDays, vacationNotes, blockedNotes };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -35,7 +35,7 @@ export const Header: React.FC = () => {
         if (data.blockedDays) setBlockedDays(data.blockedDays);
         if (data.vacationNotes) setVacationNotes(data.vacationNotes);
         if (data.blockedNotes) setBlockedNotes(data.blockedNotes);
-        if (data.state) setState(data.state);
+        if (data.federalState) setState(data.federalState);
         if (data.totalEntitlement) setTotalEntitlement(data.totalEntitlement);
       } catch (err) { console.error("Import Fehler:", err); }
     };
