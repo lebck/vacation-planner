@@ -50,7 +50,7 @@ export const Header: React.FC = () => {
           <Palmtree className="text-white w-8 h-8" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Urlaubsplaner Pro</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Urlaubsplaner</h1>
           <div className="flex items-center gap-2 text-slate-500 text-sm mt-0.5">
             <span>{BUNDESLAENDER.find(b => b.id === state)?.name}</span>
             <span>•</span>
